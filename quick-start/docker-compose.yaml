@@ -1,0 +1,224 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:${MYSQL_VERSION}
+    container_name: ${MYSQL_CONTAINER_NAME}
+    platform: linux/amd64
+    ports:
+      - ${MYSQL_REAL_PORT}:3306
+    volumes:
+      - ${MYSQL_DIR}/data:/var/lib/mysql
+      - ${MYSQL_DIR}/my.cnf:/etc/mysql/my.cnf
+      - ${MYSQL_DIR}/logs:/logs
+      - ${MYSQL_DIR}/init:/docker-entrypoint-initdb.d
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
+    restart: unless-stopped
+
+  redis:
+    image: redis:${REDIS_VERSION}
+    container_name: ${REDIS_CONTAINER_NAME}
+    ports:
+      - ${REDIS_REAL_PORT}:6379
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    # command: redis-server --requirepass 123456
+    volumes:
+      - ${REDIS_DIR}/data:/data
+      - ${REDIS_DIR}/redis.conf:/etc/redis/redis.conf
+      - ${REDIS_DIR}/logs:/logs
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:13.2-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - ${POSTGRES_DIR}/data:/var/lib/postgresql/data
+    ports:
+      - ${POSTGRES_PORT}:5432
+
+  etcd:
+    image: quay.io/coreos/etcd:${ETCD_VERSION}
+    container_name: ${ETCD_CONTAINER_NAME}
+    ports:
+      - ${ETCD_REAL_CLIENT_PORT}:2379
+      - ${ETCD_REAL_PEER_PORT}:2380
+    volumes:
+      - ${ETCD_DIR}/data:/etcd-data
+    restart: always
+    command:
+      - /usr/local/bin/etcd
+      - --name=${ETCD_NAME}
+      - --data-dir=/etcd_data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://${INTERNAL_IP}:${ETCD_REAL_CLIENT_PORT}
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://${INTERNAL_IP}:${ETCD_REAL_PEER_PORT}
+      - --initial-cluster=${ETCD_NAME}=http://${INTERNAL_IP}:${ETCD_REAL_PEER_PORT}
+      - --initial-cluster-token=${ETCD_TOKEN}
+      - --initial-cluster-state=new
+      - --log-level=info
+      - --logger=zap
+      - --log-outputs=stderr
+
+  apollo:
+    image: idoop/docker-apollo:${APOLLO_VERSION}
+    container_name: ${APOLLO_CONTAINER_NAME}
+    ports:
+      - ${APOLLO_PORTAL_PORT}:8070
+      - ${APOLLO_DEV_CONFIG_PORT}:8080
+      - ${APOLLO_DEV_ADMIN_PORT}:8090
+    volumes:
+      - ${APOLLO_DIR}/data:/opt
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      PORTAL_DB: jdbc:mysql://mysql:3306/ApolloPortalDB?characterEncoding=utf8
+      PORTAL_DB_USER: root
+      PORTAL_DB_PWD: ${MYSQL_ROOT_PASSWORD}
+      PORTAL_PORT: 8070
+
+      DEV_DB: jdbc:mysql://mysql:3306/ApolloConfigDB?characterEncoding=utf8
+      DEV_DB_USER: root
+      DEV_DB_PWD: ${MYSQL_ROOT_PASSWORD}
+      DEV_CONFIG_PORT: 8080
+      DEV_ADMIN_PORT: 8090
+
+  es:
+    image: elasticsearch:${ELASTIC_SEARCH_VERSION}
+    container_name: ${ELASTIC_SEARCH_NAME}
+    restart: unless-stopped
+    networks:
+      - quick-start
+    volumes:
+      - ${ELASTIC_SEARCH_DIR}/${ELASTIC_SEARCH_VERSION}/data:/usr/share/elasticsearch/data
+    ports:
+      - ${ELASTIC_SEARCH_SERVER_PORT}:9200
+      - ${ELASTIC_SEARCH_INNER_PORT}:9300
+    environment:
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+
+  es-head:
+    image: mobz/elasticsearch-head:${ELASTIC_SEARCH_HEAD_VERSION}
+    container_name: ${ELASTIC_SEARCH_HEAD_NAME}
+    restart: unless-stopped
+    networks:
+      - quick-start
+    ports:
+      - "9100:9100"
+    volumes:
+      - /usr/local/docker/elasticsearch-head/app.js:/usr/src/app/_site/app.js \
+      - /usr/local/docker/elasticsearch-head/vendor.js:/usr/src/app/_site/vendor.js \
+    environment:
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.5
+    container_name: kibana-v7.17.5
+    privileged: true    #环境变量
+    ports:
+      - '5601:5601'
+    networks:
+      - quick-start
+    depends_on:
+      - es
+    volumes:
+      - ./kibana/kibana.yml:/usr/share/kibana/config/kibana.yml
+
+  prometheus:
+    image: prom/prometheus:v2.27.0
+    container_name: prometheus-v2.27
+    restart: unless-stopped
+    privileged: true
+    user: '501'
+    ports:
+      - '9091:9090'
+    environment:
+      - TZ=Asia/Shanghai
+      - storage.tsdb.retention=60d
+    volumes:
+      - ./prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/config/targets_json:/etc/prometheus/targets_json
+      - ./prometheus/data:/prometheus
+
+  grafana:
+    image: grafana/grafana:7.5.6
+    container_name: grafana-v7.5
+    restart: unless-stopped
+    privileged: true
+    user: '501'
+    ports:
+      - '3000:3000'
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      # 将刚刚准备好的defaults.ini直接映射到/usr/share/grafana/conf/defaults.ini路径
+      - ./grafana/config/defaults.ini:/usr/share/grafana/conf/defaults.ini
+      # data目录，如果使用了默认的sqlite3数据库，则文件会存在这边
+      - ./grafana/data/grafana:/var/lib/grafana
+      # log目录，后期会写入log文件
+      - ./grafana/log:/var/log/grafana
+
+  portainer:
+    image: docker.io/portainer/portainer
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    volumes:
+      - ./portainer/docker.sock:/var/run/docker.sock
+
+  cadvisor:
+    image: google/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./cadvisor:/rootfs:ro
+      - ./cadvisor/var/run:/var/run:rw
+      - ./cadvisor/sys:/sys:ro
+      - ./cadvisor/var/lib/docker:/var/lib/docker:ro
+      - ./cadvisor/dev/disk:/dev/disk:ro
+
+  node-exporter:
+    image: prom/node-exporter:v1.2.2
+    hostname: node-exporter
+    container_name: node-exporterv1.2
+    restart: unless-stopped
+    ports:
+      - '9100:9100'
+    volumes:
+      - ./node-exporter/proc:/host/proc:ro
+      - ./node-exporter/sys:/host/sys:ro
+      - ./node-exporter:/rootfs:ro
+    environment:
+      - TZ=Asia/Shanghai
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/node_exporter/prom'
+      - '--collector.systemd'
+      - '--collector.systemd.unit-include=(docker|ssh|rsyslog).service'
+    #tty: true
+    #network_mode: host
+
+networks:
+  quick-start:
+    name: quick-start
