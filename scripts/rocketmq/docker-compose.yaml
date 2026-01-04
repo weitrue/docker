@@ -1,0 +1,41 @@
+version: "3"
+services:
+  rmqnamesrv:
+    image: foxiswho/rocketmq:${RMQ_NAME_SERVER_VERSION}
+    container_name: ${RMQ_NAME_SERVER_CONTAINER_NAME}
+    ports:
+      - ${RMQ_NAME_SERVER_REAL_PORT}:9876
+    volumes:
+      - ${RMQ_NAME_SERVER_DIR}/logs:/home/rocketmq/logs
+      - ${RMQ_NAME_SERVER_DIR}/store:/home/rocketmq/store
+    environment:
+      JAVA_OPT_EXT: -Duser.home=/home/rocketmq -Xms512M -Xmx512M -Xmn128m
+    command: sh mqnamesrv
+
+  rmqbroker:
+    image: foxiswho/rocketmq:${RMQ_BROKER_VERSION}
+    container_name: ${RMQ_BROKER_CONTAINER_NAME}
+    ports:
+      - ${RMQ_BROKER_LISTEN_PORT}:10911
+      - ${RMQ_BROKER_FAST_LISTEN_PORT}:10909
+    volumes:
+      - ${RMQ_BROKER_DIR}/logs:/home/rocketmq/logs
+      - ${RMQ_BROKER_DIR}/store:/home/rocketmq/store
+      - ${RMQ_BROKER_DIR}/broker.conf:/etc/rocketmq/broker.conf
+    environment:
+      JAVA_OPT_EXT: -Duser.home=/home/rocketmq -Xms512M -Xmx512M -Xmn128m
+    command: sh mqbroker -n rmqnamesrv:9876 -c /etc/rocketmq/broker.conf
+    depends_on:
+      - rmqnamesrv
+
+  rmqconsole:
+    image: pongsky/rocketmq-console-ng:${RMQ_CONSOLE_VERSION}
+    container_name: ${RMQ_CONSOLE_CONTAINER_NAME}
+    ports:
+      - ${RMQ_CONSOLE_REAL_PORT}:8080
+    volumes:
+      - ${RMQ_CONSOLE_DIR}/users.properties:/tmp/rocketmq-console/data/users.properties
+    environment:
+      JAVA_OPTS: -Drocketmq.namesrv.addr=rmqnamesrv:9876 -Dcom.rocketmq.sendMessageWithVIPChannel=false
+    depends_on:
+      - rmqnamesrv
