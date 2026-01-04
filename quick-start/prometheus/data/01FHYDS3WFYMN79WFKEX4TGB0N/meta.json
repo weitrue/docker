@@ -1,0 +1,17 @@
+{
+	"ulid": "01FHYDS3WFYMN79WFKEX4TGB0N",
+	"minTime": 1634171595287,
+	"maxTime": 1634176800000,
+	"stats": {
+		"numSamples": 357445,
+		"numSeries": 2038,
+		"numChunks": 2038
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01FHYDS3WFYMN79WFKEX4TGB0N"
+		]
+	},
+	"version": 1
+}

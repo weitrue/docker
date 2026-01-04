@@ -1,0 +1,17 @@
+{
+	"ulid": "01FJGEC30PN3KKG46ZE4EB3DTT",
+	"minTime": 1634176800000,
+	"maxTime": 1634184000000,
+	"stats": {
+		"numSamples": 952303,
+		"numSeries": 1980,
+		"numChunks": 7920
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01FJGEC30PN3KKG46ZE4EB3DTT"
+		]
+	},
+	"version": 1
+}
